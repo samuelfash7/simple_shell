@@ -1,81 +1,100 @@
-#include "shell.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+#define MAX_COMMAND_LENGTH 100
+#define MAX_ARGS_LENGTH 10
 
 /**
- * _myexit - exits the shell
- * @info: Structure containing potential arguments. Used to maintain
- * constant function prototype.
+ * main - Simple Shell
  *
- * Return: Exits with a given exit status (0) if info->argv[0] != "exit"
+ * Description: Display a prompt and wait for the user to type a command.
+ * A command line always ends with a new line.
+ * The prompt is displayed again each time a command has been executed.
+ * The command lines are simple, no semicolons, no pipes, no redirections
+ * or any other advanced features.
+ * The command lines are made only of one word. No arguments will be passed
+ * to programs.
+ * If an executable cannot be found, print an error message and display
+ * the prompt again.
+ * Handle errors.
+ * You have to handle the “end of file” condition (Ctrl+D)
+ *
+ * Return: 0 on success, otherwise 1
  */
-int _myexit(info_t *info)
+int main(void)
 {
-	int exitcheck;
+	char command[MAX_COMMAND_LENGTH];
+	char *args[MAX_ARGS_LENGTH];
+	int status, i;
 
-	if (info->argv[1]) /* If there is an exit argument */
+	while (1)
 	{
-		exitcheck = _erratoi(info->argv[1]);
-		if (exitcheck == -1)
+		if (write(STDOUT_FILENO, "$ ", 2) == -1)
 		{
-			info->status = 2;
-			print_error(info, "Illegal number: ");
-			_eputs(info->argv[1]);
-			_eputchar('\n');
+			perror("write");
 			return (1);
 		}
-		info->err_num = _erratoi(info->argv[1]);
-		return (-2);
-	}
-	info->err_num = -1;
-	return (-2);
-}
 
-/**
- * _mycd - changes the current directory of the process
- * @info: Structure containing potential arguments. Used to maintain
- * constant function prototype.
- *
- * Return: Always 0
- */
-int _mycd(info_t *info)
-{
-	char *s, *dir, buffer[1024];
-	int chdir_ret;
+		if (fgets(command, MAX_COMMAND_LENGTH, stdin) == NULL)
+		{
+			if (feof(stdin))
+			{
+				if (write(STDOUT_FILENO, "\n", 1) == -1)
+				{
+					perror("write");
+					return (1);
+				}
+				exit(EXIT_SUCCESS);
+			}
+			else
+			{
+				perror("fgets");
+				return (1);
+			}
+		}
+		char *token = strtok(command, " ");
+		i = 0;
+		while (token != NULL)
+		{
+			args[i++] = token;
+			token = strtok(NULL, " ");
+		}
+		args[i] = NULL;
+		pid_t pid = fork();
 
-	s = getcwd(buffer, 1024);
-	if (!s)
-		_puts("TODO: >>getcwd failure emsg here<<\n");
-	if (!info->argv[1])
-	{
-		dir = _getenv(info, "HOME=");
-		if (!dir)
-			chdir_ret = /* TODO: what should this be? */
-				chdir((dir = _getenv(info, "PWD=")) ? dir : "/");
+		if (pid < 0)
+		{
+			perror("fork");
+			return (1);
+		}
+
+		else if (pid == 0)
+		{
+			char *path = getcwd(NULL, 0);
+
+			strcat(path, "/");
+			strcat(path, args[0]);
+			if (access(path, X_OK) != 0)
+			{
+				perror(args[0]);
+				exit(EXIT_FAILURE);
+			}
+
+			execve(path, args, NULL);
+			perror("execve");
+			exit(EXIT_FAILURE);
+		}
+
 		else
-			chdir_ret = chdir(dir);
-	}
-	else if (_strcmp(info->argv[1], "-") == 0)
-	{
-		if (!_getenv(info, "OLDPWD="))
 		{
-			_puts(s);
-			_putchar('\n');
-			return (1);
+			waitpid(pid, &status, 0);
 		}
-		_puts(_getenv(info, "OLDPWD=")), _putchar('\n');
-		chdir_ret = /* TODO: what should this be? */
-				chdir((dir = _getenv(info, "OLDPWD=")) ? dir : "/");
-	}
-	else
-		chdir_ret = chdir(info->argv[1]);
-	if (chdir_ret == -1)
-	{
-		print_error(info, "can't cd to ");
-		_eputs(info->argv[1]), _eputchar('\n');
-	}
-	else
-	{
-		_setenv(info, "OLDPWD", _getenv(info, "PWD="));
-		_setenv(info, "PWD", getcwd(buffer, 1024));
 	}
 	return (0);
 }
